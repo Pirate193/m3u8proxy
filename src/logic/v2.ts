@@ -17,6 +17,18 @@ const m3u8ContentTypes: string[] = [
 export const M3u8ProxyV2 = async (
   request: Request<unknown>
 ): Promise<Response> => {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Max-Age": "86400",
+      },
+    });
+  }
+
   const url = new URL(request.url);
 
   const scrapeUrlString = url.searchParams.get("url");
@@ -48,18 +60,29 @@ export const M3u8ProxyV2 = async (
   }
 
   const scrapeUrl = new URL(scrapeUrlString);
-  const headers: {
-    [key: string]: string;
-  } = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    ...(typeof scrapeHeadersObject == "object" ? scrapeHeadersObject : {}),
-  };
+  const headers: Record<string, string> = {};
 
+  const userAgent = request.headers.get("User-Agent");
+  if (userAgent) {
+    headers["User-Agent"] = userAgent;
+  }
+
+  // Pass range header for media chunk loading
   const rangeHeader = request.headers.get("Range");
   if (rangeHeader) {
     headers["Range"] = rangeHeader;
+  }
+
+  // Pass any custom headers supplied via query params
+  if (scrapeHeadersObject && typeof scrapeHeadersObject === "object") {
+    for (const [k, v] of Object.entries(scrapeHeadersObject)) {
+      headers[k] = v;
+    }
+  }
+
+  // Make sure we have a fallback referer if none was provided and it's animepahe
+  if (!headers["Referer"] && scrapeUrlString.includes("owocdn.top")) {
+    headers["Referer"] = "https://pahe.win/";
   }
 
   const response = await fetch(scrapeUrlString, {
@@ -153,6 +176,8 @@ export const M3u8ProxyV2 = async (
 
   const responseHeaders = new Headers(response.headers);
   responseHeaders.set("Access-Control-Allow-Origin", "*");
+  responseHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS");
+  responseHeaders.set("Access-Control-Allow-Headers", "*");
 
   return new Response(responseBody, {
     status: response.status,
